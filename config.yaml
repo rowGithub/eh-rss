@@ -27,3 +27,11 @@ exclude:
     - low bestiality
     - animal on animal
     - animal on furry
+    
+  crawl:
+    max_pages: 50
+    stop_after_seen: 5
+  
+  feed:
+    retention_days: 7
+    max_items: 5000
