@@ -30,7 +30,8 @@ exclude:
     
   crawl:
     max_pages: 50
-    stop_after_seen: 5
+    checkpoint_size: 20
+    checkpoint_hits_required: 3
   
   feed:
     retention_days: 7
