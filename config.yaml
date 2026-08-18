@@ -29,7 +29,7 @@ exclude:
     - animal on furry
     
   crawl:
-    max_pages: 50
+    max_pages: 300
     checkpoint_size: 20
     checkpoint_hits_required: 3
   
