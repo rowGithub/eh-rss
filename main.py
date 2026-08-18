@@ -291,480 +291,480 @@ def extract_next_url(
 # 直到追上上一次已经处理过的位置
 # ============================================================
 
-    def get_new_galleries(
-        seen,
-        previous_checkpoint,
-        config
+def get_new_galleries(
+    seen,
+    previous_checkpoint,
+    config
+):
+
+    crawl = config.get(
+        "crawl",
+        {}
+    )
+
+    max_pages = int(
+        crawl.get(
+            "max_pages",
+            300
+        )
+    )
+
+    checkpoint_size = int(
+        crawl.get(
+            "checkpoint_size",
+            20
+        )
+    )
+
+    checkpoint_tail_size = int(
+        crawl.get(
+            "checkpoint_tail_size",
+            5
+        )
+    )
+
+    checkpoint_hits_required = int(
+        crawl.get(
+            "checkpoint_hits_required",
+            3
+        )
+    )
+
+    overlap_pages = int(
+        crawl.get(
+            "overlap_pages",
+            2
+        )
+    )
+
+    checkpoint_tail_size = max(
+        1,
+        checkpoint_tail_size
+    )
+
+    overlap_pages = max(
+        0,
+        overlap_pages
+    )
+
+    previous_checkpoint = [
+        str(x)
+        for x in previous_checkpoint
+        if str(x)
+    ]
+
+    # ========================================================
+    # 只使用上一轮 checkpoint 的“尾部”
+    #
+    # 假设上一轮保存：
+    # A B C ... P Q R S T
+    #
+    # 那么真正的边界锚点只取：
+    # P Q R S T
+    # ========================================================
+
+    checkpoint_tail = (
+        previous_checkpoint[
+            -checkpoint_tail_size:
+        ]
+    )
+
+    checkpoint_tail_set = set(
+        checkpoint_tail
+    )
+
+    if checkpoint_tail_set:
+
+        checkpoint_hits_required = max(
+            1,
+            min(
+                checkpoint_hits_required,
+                len(
+                    checkpoint_tail_set
+                )
+            )
+        )
+
+    # ========================================================
+    # 特殊模式
+    # ========================================================
+
+    first_run = (
+        not seen
+        and not previous_checkpoint
+    )
+
+    migration_mode = (
+        bool(seen)
+        and not previous_checkpoint
+    )
+
+    if first_run:
+
+        max_pages = 1
+
+        print(
+            "No previous state. "
+            "First-run safety: "
+            "latest page only."
+        )
+
+    if migration_mode:
+
+        print(
+            "Legacy state detected. "
+            "One-time checkpoint "
+            "migration mode enabled."
+        )
+
+    migration_seen_required = max(
+        50,
+        checkpoint_size * 2
+    )
+
+    # ========================================================
+    # 本轮状态
+    # ========================================================
+
+    current_url = EH_URL
+
+    new_galleries = []
+
+    discovered = set()
+
+    checkpoint_hits = set()
+
+    migration_seen_streak = 0
+
+    # 已经命中 checkpoint 尾部锚点，
+    # 但还要继续扫描 overlap_pages
+    boundary_confirmed = False
+
+    boundary_page_index = None
+
+    # 真正允许安全停止
+    reached_boundary = False
+
+    # 本轮首页前 N 个，
+    # 成为下一轮 checkpoint
+    next_checkpoint = []
+
+    # ========================================================
+    # 自动分页
+    # ========================================================
+
+    for page_index in range(
+        max_pages
     ):
 
-        crawl = config.get(
-            "crawl",
-            {}
-        )
-    
-        max_pages = int(
-            crawl.get(
-                "max_pages",
-                300
+        if page_index > 0:
+
+            time.sleep(
+                PAGE_REQUEST_DELAY
             )
+
+        print(
+            f"Fetching page "
+            f"{page_index + 1}/"
+            f"{max_pages}: "
+            f"{current_url}"
         )
-    
-        checkpoint_size = int(
-            crawl.get(
-                "checkpoint_size",
-                20
-            )
+
+        response = SESSION.get(
+            current_url,
+            timeout=30
         )
-    
-        checkpoint_tail_size = int(
-            crawl.get(
-                "checkpoint_tail_size",
-                5
-            )
+
+        response.raise_for_status()
+
+        galleries = extract_galleries(
+            response.text
         )
-    
-        checkpoint_hits_required = int(
-            crawl.get(
-                "checkpoint_hits_required",
-                3
-            )
+
+        print(
+            f"Found "
+            f"{len(galleries)} "
+            f"galleries "
+            f"on this page."
         )
-    
-        overlap_pages = int(
-            crawl.get(
-                "overlap_pages",
-                2
-            )
-        )
-    
-        checkpoint_tail_size = max(
-            1,
-            checkpoint_tail_size
-        )
-    
-        overlap_pages = max(
-            0,
-            overlap_pages
-        )
-    
-        previous_checkpoint = [
-            str(x)
-            for x in previous_checkpoint
-            if str(x)
-        ]
-    
-        # ========================================================
-        # 只使用上一轮 checkpoint 的“尾部”
-        #
-        # 假设上一轮保存：
-        # A B C ... P Q R S T
-        #
-        # 那么真正的边界锚点只取：
-        # P Q R S T
-        # ========================================================
-    
-        checkpoint_tail = (
-            previous_checkpoint[
-                -checkpoint_tail_size:
-            ]
-        )
-    
-        checkpoint_tail_set = set(
-            checkpoint_tail
-        )
-    
-        if checkpoint_tail_set:
-    
-            checkpoint_hits_required = max(
-                1,
-                min(
-                    checkpoint_hits_required,
-                    len(
-                        checkpoint_tail_set
-                    )
-                )
-            )
-    
-        # ========================================================
-        # 特殊模式
-        # ========================================================
-    
-        first_run = (
-            not seen
-            and not previous_checkpoint
-        )
-    
-        migration_mode = (
-            bool(seen)
-            and not previous_checkpoint
-        )
-    
-        if first_run:
-    
-            max_pages = 1
-    
+
+        if not galleries:
+
             print(
-                "No previous state. "
-                "First-run safety: "
-                "latest page only."
+                "No galleries found. "
+                "Stopping."
             )
-    
-        if migration_mode:
-    
-            print(
-                "Legacy state detected. "
-                "One-time checkpoint "
-                "migration mode enabled."
-            )
-    
-        migration_seen_required = max(
-            50,
-            checkpoint_size * 2
-        )
-    
-        # ========================================================
-        # 本轮状态
-        # ========================================================
-    
-        current_url = EH_URL
-    
-        new_galleries = []
-    
-        discovered = set()
-    
-        checkpoint_hits = set()
-    
-        migration_seen_streak = 0
-    
-        # 已经命中 checkpoint 尾部锚点，
-        # 但还要继续扫描 overlap_pages
-        boundary_confirmed = False
-    
-        boundary_page_index = None
-    
-        # 真正允许安全停止
-        reached_boundary = False
-    
-        # 本轮首页前 N 个，
-        # 成为下一轮 checkpoint
-        next_checkpoint = []
-    
-        # ========================================================
-        # 自动分页
-        # ========================================================
-    
-        for page_index in range(
-            max_pages
-        ):
-    
-            if page_index > 0:
-    
-                time.sleep(
-                    PAGE_REQUEST_DELAY
-                )
-    
-            print(
-                f"Fetching page "
-                f"{page_index + 1}/"
-                f"{max_pages}: "
-                f"{current_url}"
-            )
-    
-            response = SESSION.get(
-                current_url,
-                timeout=30
-            )
-    
-            response.raise_for_status()
-    
-            galleries = extract_galleries(
-                response.text
-            )
-    
-            print(
-                f"Found "
-                f"{len(galleries)} "
-                f"galleries "
-                f"on this page."
-            )
-    
-            if not galleries:
-    
-                print(
-                    "No galleries found. "
-                    "Stopping."
-                )
-    
-                break
-    
-            # ----------------------------------------------------
-            # 保存本轮首页 checkpoint
-            # ----------------------------------------------------
-    
-            if page_index == 0:
-    
-                next_checkpoint = [
-    
-                    str(gid)
-    
-                    for gid, token
-                    in galleries[
-                        :checkpoint_size
-                    ]
+
+            break
+
+        # ----------------------------------------------------
+        # 保存本轮首页 checkpoint
+        # ----------------------------------------------------
+
+        if page_index == 0:
+
+            next_checkpoint = [
+
+                str(gid)
+
+                for gid, token
+                in galleries[
+                    :checkpoint_size
                 ]
-    
+            ]
+
+            print(
+                "Next checkpoint "
+                f"prepared with "
+                f"{len(next_checkpoint)} "
+                "galleries."
+            )
+
+            if checkpoint_tail:
+
                 print(
-                    "Next checkpoint "
-                    f"prepared with "
-                    f"{len(next_checkpoint)} "
-                    "galleries."
+                    "Previous checkpoint "
+                    f"tail contains "
+                    f"{len(checkpoint_tail)} "
+                    "anchor galleries."
                 )
-    
-                if checkpoint_tail:
-    
-                    print(
-                        "Previous checkpoint "
-                        f"tail contains "
-                        f"{len(checkpoint_tail)} "
-                        "anchor galleries."
-                    )
-    
-            # ----------------------------------------------------
-            # 扫描当前页
-            # ----------------------------------------------------
-    
-            for gid, token in galleries:
-    
-                gid_str = str(gid)
-    
-                # ================================================
-                # 1. 检查 checkpoint 尾部锚点
-                # ================================================
-    
-                if (
-                    checkpoint_tail_set
-                    and gid_str
-                    in checkpoint_tail_set
-                ):
-    
-                    # 同一个锚点只计算一次
-                    if gid_str not in checkpoint_hits:
-    
-                        checkpoint_hits.add(
-                            gid_str
-                        )
-    
-                        print(
-                            "Checkpoint tail hit: "
-                            f"{gid_str} "
-                            f"("
-                            f"{len(checkpoint_hits)}"
-                            f"/"
-                            f"{checkpoint_hits_required}"
-                            f")"
-                        )
-    
-                    # 第一次达到要求时，
-                    # 只确认“进入旧边界区”，
-                    # 此时还不能马上停止。
-                    if (
-                        not boundary_confirmed
-                        and len(
-                            checkpoint_hits
-                        )
-                        >= checkpoint_hits_required
-                    ):
-    
-                        boundary_confirmed = True
-    
-                        boundary_page_index = (
-                            page_index
-                        )
-    
-                        print(
-                            "Checkpoint tail "
-                            "boundary confirmed "
-                            f"on page "
-                            f"{page_index + 1}. "
-                            f"Will scan "
-                            f"{overlap_pages} "
-                            "additional page(s)."
-                        )
-    
-                # ================================================
-                # 2. 收集真正的新 Gallery
-                # ================================================
-    
-                if (
-                    gid_str not in seen
-                    and gid_str
-                    not in discovered
-                ):
-    
-                    discovered.add(
+
+        # ----------------------------------------------------
+        # 扫描当前页
+        # ----------------------------------------------------
+
+        for gid, token in galleries:
+
+            gid_str = str(gid)
+
+            # ================================================
+            # 1. 检查 checkpoint 尾部锚点
+            # ================================================
+
+            if (
+                checkpoint_tail_set
+                and gid_str
+                in checkpoint_tail_set
+            ):
+
+                # 同一个锚点只计算一次
+                if gid_str not in checkpoint_hits:
+
+                    checkpoint_hits.add(
                         gid_str
                     )
-    
-                    new_galleries.append(
-                        (gid, token)
+
+                    print(
+                        "Checkpoint tail hit: "
+                        f"{gid_str} "
+                        f"("
+                        f"{len(checkpoint_hits)}"
+                        f"/"
+                        f"{checkpoint_hits_required}"
+                        f")"
                     )
-    
-                    if migration_mode:
-    
-                        migration_seen_streak = 0
-    
-                else:
-    
-                    # 迁移模式下，
-                    # 只有真正存在于旧 seen 中的项目
-                    # 才算旧数据连续命中。
-                    if (
-                        migration_mode
-                        and gid_str in seen
-                    ):
-    
-                        migration_seen_streak += 1
-    
-                # ================================================
-                # 3. 一次性的旧 state 迁移逻辑
-                # ================================================
-    
+
+                # 第一次达到要求时，
+                # 只确认“进入旧边界区”，
+                # 此时还不能马上停止。
+                if (
+                    not boundary_confirmed
+                    and len(
+                        checkpoint_hits
+                    )
+                    >= checkpoint_hits_required
+                ):
+
+                    boundary_confirmed = True
+
+                    boundary_page_index = (
+                        page_index
+                    )
+
+                    print(
+                        "Checkpoint tail "
+                        "boundary confirmed "
+                        f"on page "
+                        f"{page_index + 1}. "
+                        f"Will scan "
+                        f"{overlap_pages} "
+                        "additional page(s)."
+                    )
+
+            # ================================================
+            # 2. 收集真正的新 Gallery
+            # ================================================
+
+            if (
+                gid_str not in seen
+                and gid_str
+                not in discovered
+            ):
+
+                discovered.add(
+                    gid_str
+                )
+
+                new_galleries.append(
+                    (gid, token)
+                )
+
+                if migration_mode:
+
+                    migration_seen_streak = 0
+
+            else:
+
+                # 迁移模式下，
+                # 只有真正存在于旧 seen 中的项目
+                # 才算旧数据连续命中。
                 if (
                     migration_mode
-                    and migration_seen_streak
-                    >= migration_seen_required
+                    and gid_str in seen
                 ):
-    
-                    reached_boundary = True
-    
-                    print(
-                        "Legacy boundary "
-                        "reached after "
-                        f"{migration_seen_streak} "
-                        "consecutive "
-                        "previously-seen "
-                        "galleries."
-                    )
-    
-                    break
-    
-            if reached_boundary:
-    
-                break
-    
-            # ====================================================
-            # checkpoint 已确认后，
-            # 必须完整多扫描 overlap_pages 页。
-            #
-            # boundary 在第 1 页确认：
-            #
-            # overlap_pages = 2
-            #
-            # 第1页：确认边界
-            # 第2页：继续扫
-            # 第3页：继续扫
-            # 第3页结束后才安全停止
-            # ====================================================
-    
+
+                    migration_seen_streak += 1
+
+            # ================================================
+            # 3. 一次性的旧 state 迁移逻辑
+            # ================================================
+
             if (
-                boundary_confirmed
-                and boundary_page_index
-                is not None
-                and page_index
-                >= (
-                    boundary_page_index
-                    + overlap_pages
-                )
+                migration_mode
+                and migration_seen_streak
+                >= migration_seen_required
             ):
-    
+
                 reached_boundary = True
-    
+
                 print(
-                    "Checkpoint boundary "
-                    "completed after "
-                    f"{overlap_pages} "
-                    "overlap page(s)."
+                    "Legacy boundary "
+                    "reached after "
+                    f"{migration_seen_streak} "
+                    "consecutive "
+                    "previously-seen "
+                    "galleries."
                 )
-    
+
                 break
-    
-            # ----------------------------------------------------
-            # 获取真正的 Next >
-            # ----------------------------------------------------
-    
-            next_url = extract_next_url(
-                response.text,
-                current_url
-            )
-    
-            if not next_url:
-    
-                print(
-                    "No Next > link. "
-                    "Stopping."
-                )
-    
-                break
-    
-            if next_url == current_url:
-    
-                raise RuntimeError(
-                    "Next > link did not "
-                    "advance. "
-                    "Refusing to loop."
-                )
-    
-            current_url = next_url
-    
-        # ========================================================
-        # 防漏保险
+
+        if reached_boundary:
+
+            break
+
+        # ====================================================
+        # checkpoint 已确认后，
+        # 必须完整多扫描 overlap_pages 页。
         #
-        # 只要不是第一次初始化：
+        # boundary 在第 1 页确认：
         #
-        # - 没找到 checkpoint 尾部边界
-        # 或
-        # - 找到了，但 overlap 页数还没有扫完
+        # overlap_pages = 2
         #
-        # 都直接失败。
-        #
-        # state / checkpoint 不推进。
-        # ========================================================
-    
+        # 第1页：确认边界
+        # 第2页：继续扫
+        # 第3页：继续扫
+        # 第3页结束后才安全停止
+        # ====================================================
+
         if (
-            not first_run
-            and not reached_boundary
+            boundary_confirmed
+            and boundary_page_index
+            is not None
+            and page_index
+            >= (
+                boundary_page_index
+                + overlap_pages
+            )
         ):
-    
+
+            reached_boundary = True
+
+            print(
+                "Checkpoint boundary "
+                "completed after "
+                f"{overlap_pages} "
+                "overlap page(s)."
+            )
+
+            break
+
+        # ----------------------------------------------------
+        # 获取真正的 Next >
+        # ----------------------------------------------------
+
+        next_url = extract_next_url(
+            response.text,
+            current_url
+        )
+
+        if not next_url:
+
+            print(
+                "No Next > link. "
+                "Stopping."
+            )
+
+            break
+
+        if next_url == current_url:
+
             raise RuntimeError(
-    
-                "Did not safely reach "
-                "and pass the previous "
-                "crawl boundary within "
-                f"{max_pages} pages. "
-    
-                "State and checkpoint "
-                "were NOT advanced. "
-    
-                "Increase crawl.max_pages "
-                "and run again."
+                "Next > link did not "
+                "advance. "
+                "Refusing to loop."
             )
-    
-        if not next_checkpoint:
-    
-            next_checkpoint = list(
-                previous_checkpoint
-            )
-    
-        print(
-            f"Discovered "
-            f"{len(new_galleries)} "
-            f"new galleries."
+
+        current_url = next_url
+
+    # ========================================================
+    # 防漏保险
+    #
+    # 只要不是第一次初始化：
+    #
+    # - 没找到 checkpoint 尾部边界
+    # 或
+    # - 找到了，但 overlap 页数还没有扫完
+    #
+    # 都直接失败。
+    #
+    # state / checkpoint 不推进。
+    # ========================================================
+
+    if (
+        not first_run
+        and not reached_boundary
+    ):
+
+        raise RuntimeError(
+
+            "Did not safely reach "
+            "and pass the previous "
+            "crawl boundary within "
+            f"{max_pages} pages. "
+
+            "State and checkpoint "
+            "were NOT advanced. "
+
+            "Increase crawl.max_pages "
+            "and run again."
         )
-    
-        return (
-            new_galleries,
-            next_checkpoint
+
+    if not next_checkpoint:
+
+        next_checkpoint = list(
+            previous_checkpoint
         )
+
+    print(
+        f"Discovered "
+        f"{len(new_galleries)} "
+        f"new galleries."
+    )
+
+    return (
+        new_galleries,
+        next_checkpoint
+    )
 
 # ============================================================
 # EH 官方 gdata API
