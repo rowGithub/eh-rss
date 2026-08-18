@@ -12,6 +12,9 @@ import xml.etree.ElementTree as ET
 import requests
 import yaml
 
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 
 EH_URL = "https://e-hentai.org/"
 EH_API = "https://api.e-hentai.org/api.php"
@@ -26,6 +29,56 @@ HEADERS = {
         "AppleWebKit/537.36 Chrome/131 Safari/537.36"
     )
 }
+def create_session():
+
+    retry = Retry(
+        total=4,
+        connect=4,
+        read=4,
+        status=4,
+
+        backoff_factor=2,
+
+        status_forcelist=[
+            429,
+            500,
+            502,
+            503,
+            504
+        ],
+
+        allowed_methods=[
+            "GET",
+            "POST"
+        ],
+
+        respect_retry_after_header=True
+    )
+
+    adapter = HTTPAdapter(
+        max_retries=retry
+    )
+
+    session = requests.Session()
+
+    session.headers.update(
+        HEADERS
+    )
+
+    session.mount(
+        "https://",
+        adapter
+    )
+
+    session.mount(
+        "http://",
+        adapter
+    )
+
+    return session
+
+
+SESSION = create_session()
 
 PAGE_REQUEST_DELAY = 3.2
 
@@ -284,7 +337,7 @@ def get_new_galleries(
         )
 
 
-        response = requests.get(
+        response = SESSION.get(
             current_url,
             headers=HEADERS,
             timeout=30
@@ -510,7 +563,7 @@ def fetch_metadata(
         )
 
 
-        response = requests.post(
+        response = SESSION.post(
             EH_API,
             json=payload,
             headers=HEADERS,
