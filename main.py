@@ -86,7 +86,7 @@ API_BATCH_SIZE = 25
 API_REQUESTS_BEFORE_PAUSE = 4
 API_PAUSE_SECONDS = 5.2
 
-SEEN_STATE_LIMIT = 100000
+SEEN_STATE_LIMIT = 20000
 
 
 # ============================================================
