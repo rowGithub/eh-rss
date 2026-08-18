@@ -941,6 +941,13 @@ def find_reject_reason(
         )
     }
 
+    male_exact = {
+        normalize(x)
+        for x in exclude.get(
+            "male_exact",
+            []
+        )
+    }
 
     any_namespace = {
 
@@ -984,6 +991,12 @@ def find_reject_reason(
 
             return full_tag
 
+        if (
+            namespace == "male"
+            and tag_name in male_exact
+        ):
+            
+            return full_tag
 
         if (
             tag_name
