@@ -99,25 +99,47 @@ def load_config():
 
 
 def load_state():
+
     if not STATE_FILE.exists():
+
         return {
             "seen": [],
-            "items": []
+            "items": [],
+            "checkpoint": []
         }
 
     try:
-        with STATE_FILE.open("r", encoding="utf-8") as f:
+
+        with STATE_FILE.open(
+            "r",
+            encoding="utf-8"
+        ) as f:
+
             data = json.load(f)
 
-        data.setdefault("seen", [])
-        data.setdefault("items", [])
+        data.setdefault(
+            "seen",
+            []
+        )
+
+        data.setdefault(
+            "items",
+            []
+        )
+
+        data.setdefault(
+            "checkpoint",
+            []
+        )
 
         return data
 
     except Exception:
+
         return {
             "seen": [],
-            "items": []
+            "items": [],
+            "checkpoint": []
         }
 
 
@@ -271,6 +293,7 @@ def extract_next_url(
 
 def get_new_galleries(
     seen,
+    previous_checkpoint,
     config
 ):
 
@@ -286,16 +309,58 @@ def get_new_galleries(
         )
     )
 
-    stop_after_seen = int(
+    checkpoint_size = int(
         crawl.get(
-            "stop_after_seen",
-            5
+            "checkpoint_size",
+            20
         )
     )
 
-    # 如果 state.json 丢失，
-    # 防止突然把几十页历史全部抓回来。
-    if not seen:
+    checkpoint_hits_required = int(
+        crawl.get(
+            "checkpoint_hits_required",
+            3
+        )
+    )
+
+    previous_checkpoint = [
+        str(x)
+        for x in previous_checkpoint
+        if str(x)
+    ]
+
+    previous_checkpoint_set = set(
+        previous_checkpoint
+    )
+
+    # 防止配置要求命中数
+    # 大于实际 checkpoint 数量
+    if previous_checkpoint_set:
+
+        checkpoint_hits_required = min(
+            checkpoint_hits_required,
+            len(
+                previous_checkpoint_set
+            )
+        )
+
+    # ========================================================
+    # 两种特殊情况
+    # ========================================================
+
+    first_run = (
+        not seen
+        and not previous_checkpoint_set
+    )
+
+    # 这是从旧版 seen 模式升级到 checkpoint
+    # 时只会用一次的兼容模式
+    migration_mode = (
+        bool(seen)
+        and not previous_checkpoint_set
+    )
+
+    if first_run:
 
         max_pages = 1
 
@@ -305,6 +370,21 @@ def get_new_galleries(
             "latest page only."
         )
 
+    if migration_mode:
+
+        print(
+            "Legacy state detected. "
+            "One-time checkpoint "
+            "migration mode enabled."
+        )
+
+    # 迁移阶段不用原来的“5 个 seen”
+    # 而是要求连续看到至少 50 个旧项目，
+    # 大幅降低错误停止概率。
+    migration_seen_required = max(
+        50,
+        checkpoint_size * 2
+    )
 
     current_url = EH_URL
 
@@ -312,22 +392,29 @@ def get_new_galleries(
 
     discovered = set()
 
-    consecutive_seen = 0
+    checkpoint_hits = set()
+
+    migration_seen_streak = 0
 
     reached_boundary = False
 
+    # 本轮首页内容会成为
+    # 下一轮使用的新 checkpoint
+    next_checkpoint = []
+
+    # ========================================================
+    # 自动分页
+    # ========================================================
 
     for page_index in range(
         max_pages
     ):
 
-        # EH 搜索请求之间留足间隔
         if page_index > 0:
 
             time.sleep(
                 PAGE_REQUEST_DELAY
             )
-
 
         print(
             f"Fetching page "
@@ -336,22 +423,16 @@ def get_new_galleries(
             f"{current_url}"
         )
 
-
         response = SESSION.get(
             current_url,
-            headers=HEADERS,
             timeout=30
         )
 
         response.raise_for_status()
 
-
-        galleries = (
-            extract_galleries(
-                response.text
-            )
+        galleries = extract_galleries(
+            response.text
         )
-
 
         print(
             f"Found "
@@ -359,7 +440,6 @@ def get_new_galleries(
             f"galleries "
             f"on this page."
         )
-
 
         if not galleries:
 
@@ -370,75 +450,155 @@ def get_new_galleries(
 
             break
 
+        # ----------------------------------------------------
+        # 保存本轮最新页前 N 个 GID，
+        # 但只有整轮成功后才真正写入 state.json
+        # ----------------------------------------------------
+
+        if page_index == 0:
+
+            next_checkpoint = [
+
+                str(gid)
+
+                for gid, token
+                in galleries[
+                    :checkpoint_size
+                ]
+            ]
+
+            print(
+                "Next checkpoint "
+                f"prepared with "
+                f"{len(next_checkpoint)} "
+                "galleries."
+            )
+
+        # ----------------------------------------------------
+        # 处理当前页
+        # ----------------------------------------------------
 
         for gid, token in galleries:
 
             gid_str = str(gid)
 
+            # ================================================
+            # 正常 checkpoint 模式
+            # ================================================
 
-            # -----------------------------
-            # 已经见过
-            # -----------------------------
+            if (
+                previous_checkpoint_set
+                and gid_str
+                in previous_checkpoint_set
+            ):
 
-            if gid_str in seen:
+                checkpoint_hits.add(
+                    gid_str
+                )
 
-                consecutive_seen += 1
+                print(
+                    "Checkpoint hit: "
+                    f"{gid_str} "
+                    f"("
+                    f"{len(checkpoint_hits)}"
+                    f"/"
+                    f"{checkpoint_hits_required}"
+                    f")"
+                )
 
+            # ================================================
+            # 真正的新 gallery
+            # ================================================
 
-                if (
-                    consecutive_seen
-                    >= stop_after_seen
-                ):
+            if (
+                gid_str not in seen
+                and gid_str
+                not in discovered
+            ):
 
-                    reached_boundary = True
+                discovered.add(
+                    gid_str
+                )
 
-                    print(
-                        "Reached previous "
-                        "crawl boundary: "
-                        f"{consecutive_seen} "
-                        "consecutive "
-                        "seen galleries."
-                    )
+                new_galleries.append(
+                    (gid, token)
+                )
 
-                    break
+                # 兼容迁移时，
+                # 一旦又看到新内容，
+                # 连续旧项目计数重新开始。
+                if migration_mode:
 
+                    migration_seen_streak = 0
 
-                continue
+            else:
 
+                # ============================================
+                # 仅迁移旧版 state 时使用
+                # ============================================
 
-            # -----------------------------
-            # 当前这次抓取中已经发现过
-            # -----------------------------
+                if migration_mode:
 
-            if gid_str in discovered:
+                    migration_seen_streak += 1
 
-                continue
+            # ================================================
+            # 正常 checkpoint 边界
+            # ================================================
 
+            if (
+                previous_checkpoint_set
+                and len(
+                    checkpoint_hits
+                )
+                >= checkpoint_hits_required
+            ):
 
-            # 发现真正的新 gallery
-            consecutive_seen = 0
+                reached_boundary = True
 
-            discovered.add(
-                gid_str
-            )
+                print(
+                    "Reached previous "
+                    "checkpoint boundary: "
+                    f"{len(checkpoint_hits)} "
+                    "checkpoint hits."
+                )
 
-            new_galleries.append(
-                (gid, token)
-            )
+                break
 
+            # ================================================
+            # 一次性的旧版 state 迁移边界
+            # ================================================
+
+            if (
+                migration_mode
+                and migration_seen_streak
+                >= migration_seen_required
+            ):
+
+                reached_boundary = True
+
+                print(
+                    "Legacy boundary "
+                    "reached after "
+                    f"{migration_seen_streak} "
+                    "consecutive "
+                    "previously-seen "
+                    "galleries."
+                )
+
+                break
 
         if reached_boundary:
 
             break
 
+        # ----------------------------------------------------
+        # 下一页
+        # ----------------------------------------------------
 
-        next_url = (
-            extract_next_url(
-                response.text,
-                current_url
-            )
+        next_url = extract_next_url(
+            response.text,
+            current_url
         )
-
 
         if not next_url:
 
@@ -449,7 +609,6 @@ def get_new_galleries(
 
             break
 
-
         if next_url == current_url:
 
             raise RuntimeError(
@@ -458,21 +617,14 @@ def get_new_galleries(
                 "Refusing to loop."
             )
 
-
         current_url = next_url
 
-
     # ========================================================
-    # 极重要：
-    #
-    # 如果已有历史 state，但翻 max_pages 页仍然没有碰到
-    # 上次的位置，则直接失败。
-    #
-    # 不保存 state，避免把中间未抓到的数据跨过去。
+    # 防漏保险
     # ========================================================
 
     if (
-        seen
+        not first_run
         and not reached_boundary
     ):
 
@@ -482,12 +634,20 @@ def get_new_galleries(
             "crawl boundary within "
             f"{max_pages} pages. "
 
-            "Increase crawl.max_pages "
-            "and run again. "
+            "State and checkpoint "
+            "were NOT advanced. "
 
-            "State was NOT advanced."
+            "Increase crawl.max_pages "
+            "and run again."
         )
 
+    # 理论上首页一定能生成 checkpoint。
+    # 如果异常没有取得，则绝不能用空值覆盖旧 checkpoint。
+    if not next_checkpoint:
+
+        next_checkpoint = list(
+            previous_checkpoint
+        )
 
     print(
         f"Discovered "
@@ -495,8 +655,10 @@ def get_new_galleries(
         f"new galleries."
     )
 
-
-    return new_galleries
+    return (
+        new_galleries,
+        next_checkpoint
+    )
 
 
 # ============================================================
@@ -577,11 +739,42 @@ def fetch_metadata(
         data = response.json()
 
 
-        all_metadata.extend(
-            data.get(
-                "gmetadata",
-                []
+        returned_metadata = data.get(
+            "gmetadata",
+            []
+        )
+        
+        expected_gids = {
+            str(gid)
+            for gid, token in batch
+        }
+        
+        returned_gids = {
+            str(item.get("gid"))
+            for item in returned_metadata
+            if item.get("gid")
+        }
+        
+        missing_gids = (
+            expected_gids
+            - returned_gids
+        )
+        
+        if missing_gids:
+        
+            raise RuntimeError(
+                "EH API did not return "
+                "metadata for GIDs: "
+                + ", ".join(
+                    sorted(
+                        missing_gids,
+                        key=int
+                    )
+                )
             )
+        
+        all_metadata.extend(
+            returned_metadata
         )
 
 
@@ -1338,16 +1531,27 @@ def main():
         []
     )
 
+    previous_checkpoint = [
+
+        str(x)
+    
+        for x in state.get(
+            "checkpoint",
+            []
+        )
+    ]
 
     # --------------------------------------------------------
     # 自动翻页直到追上上次位置
     # --------------------------------------------------------
 
-    new_galleries = (
-        get_new_galleries(
-            seen,
-            config
-        )
+    (
+        new_galleries,
+        next_checkpoint
+    ) = get_new_galleries(
+        seen,
+        previous_checkpoint,
+        config
     )
 
 
@@ -1393,13 +1597,11 @@ def main():
         # 下一次继续尝试
         if "error" in meta:
 
-            print(
-                f"API error "
+            raise RuntimeError(
+                f"EH API error "
                 f"for {gid}: "
                 f'{meta["error"]}'
             )
-
-            continue
 
 
         if meta.get(
@@ -1519,6 +1721,10 @@ def main():
 
     state["items"] = (
         all_items
+    )
+
+    state["checkpoint"] = (
+        next_checkpoint
     )
 
 
