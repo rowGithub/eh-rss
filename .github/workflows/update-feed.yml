@@ -38,7 +38,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add feed.xml state.json
+          git add feed.xml feed-*.xml state.json
 
           if git diff --cached --quiet; then
             echo "No changes to commit."
@@ -51,6 +51,10 @@ jobs:
         run: |
           mkdir -p public
           cp feed.xml public/feed.xml
+          cp feed-0.xml public/feed-0.xml
+          cp feed-1.xml public/feed-1.xml
+          cp feed-2.xml public/feed-2.xml
+          cp feed-3.xml public/feed-3.xml
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
