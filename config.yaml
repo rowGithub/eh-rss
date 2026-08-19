@@ -33,15 +33,15 @@ exclude:
     - animal on animal
     - animal on furry
     
-  crawl:
-    max_pages: 300
-    checkpoint_size: 20
-    checkpoint_tail_size: 5
-    checkpoint_hits_required: 3
-    overlap_pages: 2
-  
-  feed:
-    retention_days: 7
-    max_items: 5000
-    shard_count: 4
+crawl:
+  max_pages: 300
+  checkpoint_size: 20
+  checkpoint_tail_size: 5
+  checkpoint_hits_required: 3
+  overlap_pages: 2
+
+feed:
+  retention_days: 7
+  max_items: 5000
+  shard_count: 4
     
