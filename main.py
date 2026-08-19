@@ -1434,7 +1434,11 @@ def apply_feed_retention(
 # 生成 RSS 2.0
 # ============================================================
 
-def build_feed(items):
+def build_feed(
+    items,
+    output_file=FEED_FILE,
+    feed_title="Filtered E-Hentai"
+):
 
     rss = ET.Element(
         "rss",
@@ -1451,9 +1455,7 @@ def build_feed(items):
     ET.SubElement(
         channel,
         "title"
-    ).text = (
-        "Filtered E-Hentai"
-    )
+    ).text = feed_title
 
 
     ET.SubElement(
@@ -1607,7 +1609,7 @@ def build_feed(items):
 
 
     tree.write(
-        FEED_FILE,
+        output_file,
         encoding="utf-8",
         xml_declaration=True
     )
@@ -1616,11 +1618,68 @@ def build_feed(items):
     print(
 
         f"RSS generated: "
-        f"{FEED_FILE} "
+        f"{output_file} "
 
         f"({len(items)} items)"
     )
 
+def build_sharded_feeds(
+    items,
+    config
+):
+
+    feed_config = config.get(
+        "feed",
+        {}
+    )
+
+    shard_count = int(
+        feed_config.get(
+            "shard_count",
+            1
+        )
+    )
+
+    shard_count = max(
+        1,
+        shard_count
+    )
+
+    print(
+        f"Generating "
+        f"{shard_count} "
+        f"RSS shard(s)..."
+    )
+
+    for shard_index in range(
+        shard_count
+    ):
+
+        shard_items = [
+
+            item
+
+            for item in items
+
+            if int(
+                item["gid"]
+            ) % shard_count
+            == shard_index
+        ]
+
+        output_file = Path(
+            f"feed-{shard_index}.xml"
+        )
+
+        build_feed(
+            shard_items,
+            output_file=output_file,
+            feed_title=(
+                "Filtered E-Hentai "
+                f"[{shard_index + 1}/"
+                f"{shard_count}]"
+            )
+        )
 
 # ============================================================
 # MAIN
@@ -1851,11 +1910,18 @@ def main():
     )
 
 
+    # 原来的完整 RSS 继续保留
     build_feed(
         all_items
     )
-
-
+    
+    # 同时生成分片 RSS
+    build_sharded_feeds(
+        all_items,
+        config
+    )
+    
+    
     print("Done.")
 
 
