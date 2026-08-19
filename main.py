@@ -18,6 +18,12 @@ from urllib3.util.retry import Retry
 
 EH_URL = "https://e-hentai.org/"
 EH_API = "https://api.e-hentai.org/api.php"
+ATOM_NS = "http://www.w3.org/2005/Atom"
+
+ET.register_namespace(
+    "atom",
+    ATOM_NS
+)
 
 CONFIG_FILE = Path("config.yaml")
 STATE_FILE = Path("state.json")
@@ -1437,7 +1443,9 @@ def apply_feed_retention(
 def build_feed(
     items,
     output_file=FEED_FILE,
-    feed_title="Filtered E-Hentai"
+    feed_title="Filtered E-Hentai",
+    self_url=None,
+    websub_hub=None
 ):
 
     rss = ET.Element(
@@ -1450,6 +1458,28 @@ def build_feed(
         rss,
         "channel"
     )
+    if websub_hub:
+
+        ET.SubElement(
+            channel,
+            f"{{{ATOM_NS}}}link",
+            {
+                "href": websub_hub,
+                "rel": "hub"
+            }
+        )
+
+    if self_url:
+    
+        ET.SubElement(
+            channel,
+            f"{{{ATOM_NS}}}link",
+            {
+                "href": self_url,
+                "rel": "self",
+                "type": "application/rss+xml"
+            }
+        )
 
 
     ET.SubElement(
@@ -1633,6 +1663,20 @@ def build_sharded_feeds(
         {}
     )
 
+    public_base_url = str(
+        feed_config.get(
+            "public_base_url",
+            ""
+        )
+    ).rstrip("/")
+    
+    websub_hub = str(
+        feed_config.get(
+            "websub_hub",
+            ""
+        )
+    ).strip()
+
     shard_count = int(
         feed_config.get(
             "shard_count",
@@ -1671,6 +1715,11 @@ def build_sharded_feeds(
             f"feed-{shard_index}.xml"
         )
 
+        self_url = (
+            f"{public_base_url}/"
+            f"feed-{shard_index}.xml"
+        )
+        
         build_feed(
             shard_items,
             output_file=output_file,
@@ -1678,7 +1727,9 @@ def build_sharded_feeds(
                 "Filtered E-Hentai "
                 f"[{shard_index + 1}/"
                 f"{shard_count}]"
-            )
+            ),
+            self_url=self_url,
+            websub_hub=websub_hub
         )
 
 # ============================================================
@@ -1911,8 +1962,31 @@ def main():
 
 
     # 原来的完整 RSS 继续保留
+    feed_config = config.get(
+        "feed",
+        {}
+    )
+    
+    public_base_url = str(
+        feed_config.get(
+            "public_base_url",
+            ""
+        )
+    ).rstrip("/")
+    
+    websub_hub = str(
+        feed_config.get(
+            "websub_hub",
+            ""
+        )
+    ).strip()
+    
     build_feed(
-        all_items
+        all_items,
+        self_url=(
+            f"{public_base_url}/feed.xml"
+        ),
+        websub_hub=websub_hub
     )
     
     # 同时生成分片 RSS
