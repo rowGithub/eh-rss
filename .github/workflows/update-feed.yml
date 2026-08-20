@@ -38,7 +38,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add feed.xml feed-*.xml state.json
+          git add feed.xml feed-*.xml rss-*.xml state.json
 
           if git diff --cached --quiet; then
             echo "No changes to commit."
@@ -50,11 +50,18 @@ jobs:
       - name: Prepare Pages files
         run: |
           mkdir -p public
+      
           cp feed.xml public/feed.xml
+      
           cp feed-0.xml public/feed-0.xml
           cp feed-1.xml public/feed-1.xml
           cp feed-2.xml public/feed-2.xml
           cp feed-3.xml public/feed-3.xml
+      
+          cp rss-0.xml public/rss-0.xml
+          cp rss-1.xml public/rss-1.xml
+          cp rss-2.xml public/rss-2.xml
+          cp rss-3.xml public/rss-3.xml
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
@@ -76,24 +83,3 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
       
-      - name: Notify WebSub hub
-        run: |
-          BASE_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
-          HUB="https://pubsubhubbub.appspot.com/"
-
-          for i in 0 1 2 3
-          do
-            echo "Publishing $BASE_URL/feed-$i.xml"
-
-            curl \
-              --fail \
-              --silent \
-              --show-error \
-              -X POST \
-              "$HUB" \
-              -H "Content-Type: application/x-www-form-urlencoded" \
-              --data-urlencode "hub.mode=publish" \
-              --data-urlencode "hub.url=$BASE_URL/feed-$i.xml"
-
-            echo "WebSub notification sent for feed-$i.xml"
-          done
