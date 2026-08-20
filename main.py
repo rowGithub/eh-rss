@@ -1709,24 +1709,55 @@ def build_sharded_feeds(
             == shard_index
         ]
 
-        output_file = Path(
+        # ------------------------------------------------
+        # 旧 URL 暂时继续生成，避免现有订阅和工作流中断
+        # ------------------------------------------------
+        
+        old_output_file = Path(
             f"feed-{shard_index}.xml"
         )
-
-        self_url = (
+        
+        old_self_url = (
             f"{public_base_url}/"
             f"feed-{shard_index}.xml"
         )
         
         build_feed(
             shard_items,
-            output_file=output_file,
+            output_file=old_output_file,
             feed_title=(
                 "Filtered E-Hentai "
                 f"[{shard_index + 1}/"
                 f"{shard_count}]"
             ),
-            self_url=self_url,
+            self_url=old_self_url,
+            websub_hub=websub_hub
+        )
+        
+        
+        # ------------------------------------------------
+        # 新的普通 RSS URL
+        # Inoreader 从未见过这些地址
+        # ------------------------------------------------
+        
+        new_output_file = Path(
+            f"rss-{shard_index}.xml"
+        )
+        
+        new_self_url = (
+            f"{public_base_url}/"
+            f"rss-{shard_index}.xml"
+        )
+        
+        build_feed(
+            shard_items,
+            output_file=new_output_file,
+            feed_title=(
+                "Filtered E-Hentai RSS "
+                f"[{shard_index + 1}/"
+                f"{shard_count}]"
+            ),
+            self_url=new_self_url,
             websub_hub=websub_hub
         )
 
