@@ -1458,7 +1458,7 @@ def build_feed(
         rss,
         "channel"
     )
-    if websub_hub:
+    if websub_hub and self_url:
 
         ET.SubElement(
             channel,
@@ -1468,8 +1468,6 @@ def build_feed(
                 "rel": "hub"
             }
         )
-
-    if self_url:
     
         ET.SubElement(
             channel,
