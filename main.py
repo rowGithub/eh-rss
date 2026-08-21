@@ -1268,6 +1268,85 @@ def create_permanent_batches(
         + existing_batches
     )
 
+def apply_batch_retention(
+    batches,
+    config
+):
+
+    feed_config = config.get(
+        "feed",
+        {}
+    )
+
+    retention_days = int(
+        feed_config.get(
+            "batch_retention_days",
+            3
+        )
+    )
+
+    max_items = int(
+        feed_config.get(
+            "batch_max_items",
+            200
+        )
+    )
+
+    retention_days = max(
+        1,
+        retention_days
+    )
+
+    max_items = max(
+        1,
+        max_items
+    )
+
+    cutoff = int(
+        (
+            datetime.now(
+                timezone.utc
+            )
+            - timedelta(
+                days=retention_days
+            )
+        ).timestamp()
+    )
+
+    retained = [
+        batch
+        for batch in batches
+        if int(
+            batch.get(
+                "created_at",
+                0
+            )
+        ) >= cutoff
+    ]
+
+    retained.sort(
+        key=lambda x: int(
+            x.get(
+                "created_at",
+                0
+            )
+        ),
+        reverse=True
+    )
+
+    retained = retained[
+        :max_items
+    ]
+
+    print(
+        "Batch retention: "
+        f"{len(retained)} batches "
+        f"(last {retention_days} days, "
+        f"max {max_items})."
+    )
+
+    return retained
+
 # ============================================================
 # RSS 内容
 # ============================================================
@@ -2030,7 +2109,12 @@ def main():
         new_items,
         existing_batches,
         config
-    )    
+    )
+
+    all_batches = apply_batch_retention(
+        all_batches,
+        config
+    )
 
     # --------------------------------------------------------
     # 新旧 RSS 项目合并并按 gid 去重
