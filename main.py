@@ -111,7 +111,8 @@ def load_state():
         return {
             "seen": [],
             "items": [],
-            "checkpoint": []
+            "checkpoint": [],
+            "batches": []
         }
 
     try:
@@ -138,6 +139,11 @@ def load_state():
             []
         )
 
+        data.setdefault(
+            "batches",
+            []
+        )
+
         return data
 
     except Exception:
@@ -145,7 +151,8 @@ def load_state():
         return {
             "seen": [],
             "items": [],
-            "checkpoint": []
+            "checkpoint": [],
+            "batches": []
         }
 
 
@@ -1160,6 +1167,106 @@ def metadata_to_item(meta):
             )
     }
 
+def create_permanent_batches(
+    new_items,
+    existing_batches,
+    config
+):
+
+    feed_config = config.get(
+        "feed",
+        {}
+    )
+
+    batch_size = int(
+        feed_config.get(
+            "batch_size",
+            12
+        )
+    )
+
+    batch_size = max(
+        1,
+        batch_size
+    )
+
+    if not new_items:
+
+        return existing_batches
+
+    # 保证同一轮里的顺序稳定：
+    # 最新 gallery 在前
+    new_items = sorted(
+        new_items,
+        key=lambda x: x.get(
+            "posted",
+            0
+        ),
+        reverse=True
+    )
+
+    created_at = int(
+        datetime.now(
+            timezone.utc
+        ).timestamp()
+    )
+
+    new_batches = []
+
+    batch_number = 0
+
+    for start in range(
+        0,
+        len(new_items),
+        batch_size
+    ):
+
+        batch_items = new_items[
+            start:
+            start + batch_size
+        ]
+
+        if not batch_items:
+
+            continue
+
+        batch_number += 1
+
+        first_gid = str(
+            batch_items[0]["gid"]
+        )
+
+        last_gid = str(
+            batch_items[-1]["gid"]
+        )
+
+        batch_id = (
+            f"eh-batch-"
+            f"{created_at}-"
+            f"{batch_number}-"
+            f"{first_gid}-"
+            f"{last_gid}"
+        )
+
+        new_batches.append(
+            {
+                "id": batch_id,
+                "created_at": created_at,
+                "items": batch_items
+            }
+        )
+
+        print(
+            f"Created permanent batch "
+            f"{batch_id}: "
+            f"{len(batch_items)} galleries"
+        )
+
+    # 新批次放在最前面
+    return (
+        new_batches
+        + existing_batches
+    )
 
 # ============================================================
 # RSS 内容
@@ -1788,6 +1895,11 @@ def main():
         []
     )
 
+    existing_batches = state.get(
+        "batches",
+        []
+    )
+
     previous_checkpoint = [
 
         str(x)
@@ -1910,6 +2022,15 @@ def main():
             )
         )
 
+    # --------------------------------------------------------
+    # 把本轮新 ACCEPT 的 Gallery 永久封装成 Batch
+    # --------------------------------------------------------
+    
+    all_batches = create_permanent_batches(
+        new_items,
+        existing_batches,
+        config
+    )    
 
     # --------------------------------------------------------
     # 新旧 RSS 项目合并并按 gid 去重
@@ -1984,7 +2105,10 @@ def main():
         next_checkpoint
     )
 
-
+    state["batches"] = (
+        all_batches
+    )
+    
     save_state(
         state
     )
