@@ -1347,6 +1347,284 @@ def apply_batch_retention(
 
     return retained
 
+def build_batch_description(
+    batch
+):
+
+    parts = []
+
+    parts.append(
+        "<ol>"
+    )
+
+    for item in batch.get(
+        "items",
+        []
+    ):
+
+        title = html.escape(
+            str(
+                item.get(
+                    "title",
+                    ""
+                )
+            )
+        )
+
+        url = html.escape(
+            str(
+                item.get(
+                    "url",
+                    ""
+                )
+            )
+        )
+
+        rating = str(
+            item.get(
+                "rating",
+                ""
+            )
+        )
+
+        category = html.escape(
+            str(
+                item.get(
+                    "category",
+                    ""
+                )
+            )
+        )
+
+        pages = html.escape(
+            str(
+                item.get(
+                    "filecount",
+                    ""
+                )
+            )
+        )
+
+        details = []
+
+        if rating:
+
+            details.append(
+                f"{html.escape(rating)}★"
+            )
+
+        if category:
+
+            details.append(
+                category
+            )
+
+        if pages:
+
+            details.append(
+                f"{pages}P"
+            )
+
+        detail_text = (
+            " · ".join(
+                details
+            )
+        )
+
+        parts.append(
+            "<li>"
+        )
+
+        parts.append(
+            f'<a href="{url}">'
+            f"<b>{title}</b>"
+            f"</a>"
+        )
+
+        if detail_text:
+
+            parts.append(
+                "<br>"
+                + detail_text
+            )
+
+        parts.append(
+            "</li>"
+        )
+
+    parts.append(
+        "</ol>"
+    )
+
+    return "".join(
+        parts
+    )
+
+def build_batch_feed(
+    batches,
+    output_file=Path(
+        "batch.xml"
+    )
+):
+
+    rss = ET.Element(
+        "rss",
+        version="2.0"
+    )
+
+    channel = ET.SubElement(
+        rss,
+        "channel"
+    )
+
+    ET.SubElement(
+        channel,
+        "title"
+    ).text = (
+        "Filtered E-Hentai Batch"
+    )
+
+    ET.SubElement(
+        channel,
+        "link"
+    ).text = EH_URL
+
+    ET.SubElement(
+        channel,
+        "description"
+    ).text = (
+        "Filtered E-Hentai galleries "
+        "grouped into compact batches"
+    )
+
+    ET.SubElement(
+        channel,
+        "language"
+    ).text = "en"
+
+    ET.SubElement(
+        channel,
+        "lastBuildDate"
+    ).text = format_datetime(
+        datetime.now(
+            timezone.utc
+        )
+    )
+
+    for batch in batches:
+
+        batch_items = batch.get(
+            "items",
+            []
+        )
+
+        if not batch_items:
+
+            continue
+
+        created_at = int(
+            batch.get(
+                "created_at",
+                0
+            )
+            or 0
+        )
+
+        entry = ET.SubElement(
+            channel,
+            "item"
+        )
+
+        if created_at:
+
+            dt = datetime.fromtimestamp(
+                created_at,
+                tz=timezone.utc
+            )
+
+            title_time = dt.strftime(
+                "%Y-%m-%d %H:%M UTC"
+            )
+
+        else:
+
+            dt = datetime.now(
+                timezone.utc
+            )
+
+            title_time = (
+                "E-Hentai update"
+            )
+
+        ET.SubElement(
+            entry,
+            "title"
+        ).text = (
+            f"{title_time} — "
+            f"{len(batch_items)} galleries"
+        )
+
+        guid = ET.SubElement(
+            entry,
+            "guid",
+            isPermaLink="false"
+        )
+
+        guid.text = str(
+            batch.get(
+                "id",
+                ""
+            )
+        )
+
+        ET.SubElement(
+            entry,
+            "pubDate"
+        ).text = format_datetime(
+            dt
+        )
+
+        # 用本批第一本 Gallery 作为 item link
+        ET.SubElement(
+            entry,
+            "link"
+        ).text = str(
+            batch_items[0].get(
+                "url",
+                EH_URL
+            )
+        )
+
+        ET.SubElement(
+            entry,
+            "description"
+        ).text = (
+            build_batch_description(
+                batch
+            )
+        )
+
+    tree = ET.ElementTree(
+        rss
+    )
+
+    ET.indent(
+        tree,
+        space="  "
+    )
+
+    tree.write(
+        output_file,
+        encoding="utf-8",
+        xml_declaration=True
+    )
+
+    print(
+        f"Batch RSS generated: "
+        f"{output_file} "
+        f"({len(batches)} batches)"
+    )
+
 # ============================================================
 # RSS 内容
 # ============================================================
@@ -2231,7 +2509,10 @@ def main():
         all_items,
         config
     )
-    
+
+    build_batch_feed(
+        all_batches
+    )
     
     print("Done.")
 
