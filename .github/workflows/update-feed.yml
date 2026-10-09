@@ -74,6 +74,11 @@ jobs:
   deploy:
     needs: update-feed
 
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+      
     runs-on: ubuntu-latest
 
     environment:
